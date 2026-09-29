@@ -17,6 +17,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.zenarahealth.sbt.model.Component;
 import com.zenarahealth.sbt.model.ComponentType;
 import com.zenarahealth.sbt.model.Journey;
+import com.zenarahealth.sbt.model.MigrationResponse;
 import com.zenarahealth.sbt.model.MigrationStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,9 +36,11 @@ class MigrationEngineTest {
     void migratesCleanChain() throws IOException {
         Fixture fixture = loadFixture("clean_chain.json");
 
-        MigrationStatus status = migrationEngine.executeMigration(fixture.journey());
+        MigrationResponse response = migrationEngine.executeMigration(fixture.journey());
 
-        assertEquals(MigrationStatus.SUCCESS, status);
+        assertEquals(MigrationStatus.SUCCESS, response.getStatus());
+        assertEquals(fixture.journey().getJourneyId(), response.getJourneyId());
+        assertTrue(response.getExecutionTimeMs() >= 0);
         assertEquals(fixture.journey().getComponents().size(), targetSandboxService.getTargetState().size());
     }
 
@@ -45,9 +48,9 @@ class MigrationEngineTest {
     void migratesDiamondGraph() throws IOException {
         Fixture fixture = loadFixture("diamond_parallel.json");
 
-        MigrationStatus status = migrationEngine.executeMigration(fixture.journey());
+        MigrationResponse response = migrationEngine.executeMigration(fixture.journey());
 
-        assertEquals(MigrationStatus.SUCCESS, status);
+        assertEquals(MigrationStatus.SUCCESS, response.getStatus());
         assertEquals(fixture.journey().getComponents().size(), targetSandboxService.getTargetState().size());
     }
 
@@ -55,9 +58,10 @@ class MigrationEngineTest {
     void refusesInvalidDependencyGraphWithoutWriting() throws IOException {
         Fixture fixture = loadFixture("cycle_or_missing.json");
 
-        MigrationStatus status = migrationEngine.executeMigration(fixture.journey());
+        MigrationResponse response = migrationEngine.executeMigration(fixture.journey());
 
-        assertEquals(MigrationStatus.REFUSED, status);
+        assertEquals(MigrationStatus.REFUSED, response.getStatus());
+        assertTrue(response.getFailureReason() != null && !response.getFailureReason().isBlank());
         assertTrue(targetSandboxService.getTargetState().isEmpty());
     }
 
@@ -65,9 +69,9 @@ class MigrationEngineTest {
     void rollsBackWritesAfterMidwayFailure() throws IOException {
         Fixture fixture = loadFixture("midway_failure_rollback.json");
 
-        MigrationStatus status = migrationEngine.executeMigration(fixture.journey());
+        MigrationResponse response = migrationEngine.executeMigration(fixture.journey());
 
-        assertEquals(MigrationStatus.ROLLED_BACK, status);
+        assertEquals(MigrationStatus.ROLLED_BACK, response.getStatus());
         assertTrue(targetSandboxService.getTargetState().isEmpty());
     }
 
@@ -85,9 +89,9 @@ class MigrationEngineTest {
         };
         migrationEngine = new MigrationEngine(new GraphSolver(), silentFailureTarget);
 
-        MigrationStatus status = migrationEngine.executeMigration(fixture.journey());
+        MigrationResponse response = migrationEngine.executeMigration(fixture.journey());
 
-        assertEquals(MigrationStatus.ROLLED_BACK, status);
+        assertEquals(MigrationStatus.ROLLED_BACK, response.getStatus());
         assertTrue(silentFailureTarget.getTargetState().isEmpty());
     }
 
@@ -99,9 +103,10 @@ class MigrationEngineTest {
         }
         Map<String, Component> preAttemptState = new HashMap<>(targetSandboxService.getTargetState());
 
-        MigrationStatus status = migrationEngine.executeMigration(fixture.journey());
+        MigrationResponse response = migrationEngine.executeMigration(fixture.journey());
 
-        assertTrue(status == MigrationStatus.REFUSED || status == MigrationStatus.ROLLED_BACK);
+        assertTrue(response.getStatus() == MigrationStatus.REFUSED
+                || response.getStatus() == MigrationStatus.ROLLED_BACK);
         assertEquals(preAttemptState, targetSandboxService.getTargetState());
     }
 
@@ -111,9 +116,9 @@ class MigrationEngineTest {
         assertTrue(targetSandboxService.writeComponent(existingComponent));
         Journey journey = journeyWith(existingComponent);
 
-        MigrationStatus status = migrationEngine.executeMigration(journey);
+        MigrationResponse response = migrationEngine.executeMigration(journey);
 
-        assertEquals(MigrationStatus.SUCCESS, status);
+        assertEquals(MigrationStatus.SUCCESS, response.getStatus());
         assertEquals(existingComponent, targetSandboxService.getTargetState().get("AUD-100"));
     }
 
@@ -125,9 +130,9 @@ class MigrationEngineTest {
                 .components(Collections.emptyList())
                 .build();
 
-        MigrationStatus status = migrationEngine.executeMigration(journey);
+        MigrationResponse response = migrationEngine.executeMigration(journey);
 
-        assertEquals(MigrationStatus.SUCCESS, status);
+        assertEquals(MigrationStatus.SUCCESS, response.getStatus());
         assertTrue(targetSandboxService.getTargetState().isEmpty());
     }
 
@@ -139,9 +144,9 @@ class MigrationEngineTest {
         Component eventTwo = component("EVT-2", ComponentType.EVENT, "HASH_EVT_2", List.of("AUD-2"));
         Journey journey = journeyWith(audienceOne, eventOne, audienceTwo, eventTwo);
 
-        MigrationStatus status = migrationEngine.executeMigration(journey);
+        MigrationResponse response = migrationEngine.executeMigration(journey);
 
-        assertEquals(MigrationStatus.SUCCESS, status);
+        assertEquals(MigrationStatus.SUCCESS, response.getStatus());
         assertEquals(4, targetSandboxService.getTargetState().size());
         assertTrue(targetSandboxService.getTargetState().keySet()
                 .containsAll(List.of("AUD-1", "EVT-1", "AUD-2", "EVT-2")));
@@ -164,11 +169,18 @@ class MigrationEngineTest {
         Component failingAction = component("FAIL-100", ComponentType.CUSTOM_ACTION, "HASH_FAIL", List.of("CAM-100"));
         Journey journey = journeyWith(audience, campaign, failingAction);
 
-        MigrationStatus status = migrationEngine.executeMigration(journey);
+        MigrationResponse response = migrationEngine.executeMigration(journey);
 
-        assertEquals(MigrationStatus.ROLLED_BACK, status);
+        assertEquals(MigrationStatus.ROLLED_BACK, response.getStatus());
         assertEquals(List.of("CAM-100", "AUD-100"), deletedIds);
         assertTrue(trackingTarget.getTargetState().isEmpty());
+        assertEquals(List.of("CAM-100", "AUD-100"),
+                response.getAuditTrail().stream()
+                        .filter(entry -> entry.getAction().equals("DELETED"))
+                        .map(entry -> entry.getComponentId())
+                        .toList());
+        assertEquals(List.of("APPLIED", "APPLIED", "APPLIED", "DELETED", "DELETED"),
+                response.getAuditTrail().stream().map(entry -> entry.getAction()).toList());
     }
 
     private Component component(String id, ComponentType type, String payloadHash, List<String> dependencies) {
