@@ -11,7 +11,9 @@ import com.zenarahealth.sbt.exception.DependencyCycleException;
 import com.zenarahealth.sbt.exception.MissingDependencyException;
 import com.zenarahealth.sbt.model.Component;
 import com.zenarahealth.sbt.model.Journey;
+import org.springframework.stereotype.Service;
 
+@Service
 public class GraphSolver {
     public List<Component> resolveExecutionOrder(Journey journey) {
         if (journey == null || journey.getComponents() == null) {

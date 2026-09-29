@@ -13,7 +13,10 @@ import com.zenarahealth.sbt.model.Component;
 import com.zenarahealth.sbt.model.Journey;
 import com.zenarahealth.sbt.model.MigrationResponse;
 import com.zenarahealth.sbt.model.MigrationStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 
+@Service
 public class MigrationEngine {
     private final GraphSolver graphSolver;
     private final TargetSandboxService targetSandboxService;
@@ -23,6 +26,7 @@ public class MigrationEngine {
         this(graphSolver, targetSandboxService, new AuditLogService());
     }
 
+    @Autowired
     public MigrationEngine(
             GraphSolver graphSolver,
             TargetSandboxService targetSandboxService,

@@ -4,7 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.zenarahealth.sbt.model.AuditLogEntry;
+import org.springframework.stereotype.Service;
 
+@Service
 public class AuditLogService {
     private final List<AuditLogEntry> trail = new ArrayList<>();
 

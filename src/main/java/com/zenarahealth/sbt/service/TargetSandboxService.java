@@ -7,7 +7,9 @@ import java.util.Objects;
 
 import com.zenarahealth.sbt.model.Component;
 import com.zenarahealth.sbt.model.Journey;
+import org.springframework.stereotype.Service;
 
+@Service
 public class TargetSandboxService {
     private final Map<String, Component> targetState = new HashMap<>();
     private final Map<String, Component> readOnlyTargetState = Collections.unmodifiableMap(targetState);
