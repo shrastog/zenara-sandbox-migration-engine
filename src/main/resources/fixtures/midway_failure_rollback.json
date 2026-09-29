@@ -1,0 +1,40 @@
+{
+  "scenario": "midway_failure_rollback",
+  "journey": {
+    "journeyId": "journey-midway-failure",
+    "name": "Welcome and engagement with injected failure",
+    "components": [
+      {
+        "id": "audience-new-users",
+        "name": "New users",
+        "type": "AUDIENCE",
+        "payloadContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "dependencies": []
+      },
+      {
+        "id": "campaign-welcome",
+        "name": "Welcome email",
+        "type": "INLINE_CAMPAIGN",
+        "payloadContentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "dependencies": ["audience-new-users"]
+      },
+      {
+        "id": "event-opened",
+        "name": "FAIL: Email opened",
+        "type": "EVENT",
+        "payloadContentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "dependencies": ["campaign-welcome"]
+      },
+      {
+        "id": "action-follow-up",
+        "name": "Schedule follow-up",
+        "type": "CUSTOM_ACTION",
+        "payloadContentHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "dependencies": ["event-opened"]
+      }
+    ]
+  },
+  "targetComponents": [],
+  "failAtComponentId": "event-opened",
+  "expectedStatus": "ROLLED_BACK"
+}

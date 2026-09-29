@@ -1,0 +1,41 @@
+{
+  "scenario": "silent_partial_failure",
+  "journey": {
+    "journeyId": "journey-silent-partial-failure",
+    "name": "Welcome journey with a silently omitted write",
+    "components": [
+      {
+        "id": "audience-new-users",
+        "name": "New users",
+        "type": "AUDIENCE",
+        "payloadContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "dependencies": []
+      },
+      {
+        "id": "campaign-welcome",
+        "name": "Welcome email",
+        "type": "INLINE_CAMPAIGN",
+        "payloadContentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "dependencies": ["audience-new-users"]
+      },
+      {
+        "id": "event-opened",
+        "name": "Email opened",
+        "type": "EVENT",
+        "payloadContentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "dependencies": ["campaign-welcome"]
+      },
+      {
+        "id": "action-follow-up",
+        "name": "Schedule follow-up",
+        "type": "CUSTOM_ACTION",
+        "payloadContentHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "dependencies": ["event-opened"]
+      }
+    ]
+  },
+  "targetComponents": [],
+  "silentlyOmitComponentId": "campaign-welcome",
+  "expectedVerifierFinding": "event-opened references missing target component campaign-welcome",
+  "expectedStatus": "ROLLED_BACK"
+}

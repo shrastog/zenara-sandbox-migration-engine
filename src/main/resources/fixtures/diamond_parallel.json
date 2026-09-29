@@ -1,0 +1,46 @@
+{
+  "scenario": "diamond_parallel",
+  "journey": {
+    "journeyId": "journey-diamond-parallel",
+    "name": "Parallel onboarding messages",
+    "components": [
+      {
+        "id": "audience-new-users",
+        "name": "New users",
+        "type": "AUDIENCE",
+        "payloadContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "dependencies": []
+      },
+      {
+        "id": "campaign-welcome-email",
+        "name": "Welcome email",
+        "type": "INLINE_CAMPAIGN",
+        "payloadContentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "dependencies": ["audience-new-users"]
+      },
+      {
+        "id": "campaign-welcome-sms",
+        "name": "Welcome SMS",
+        "type": "INLINE_CAMPAIGN",
+        "payloadContentHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "dependencies": ["audience-new-users"]
+      },
+      {
+        "id": "event-any-message-opened",
+        "name": "Any welcome message opened",
+        "type": "EVENT",
+        "payloadContentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "dependencies": ["campaign-welcome-email", "campaign-welcome-sms"]
+      },
+      {
+        "id": "action-follow-up",
+        "name": "Schedule follow-up",
+        "type": "CUSTOM_ACTION",
+        "payloadContentHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "dependencies": ["event-any-message-opened"]
+      }
+    ]
+  },
+  "targetComponents": [],
+  "expectedStatus": "SUCCESS"
+}

@@ -1,0 +1,48 @@
+{
+  "scenario": "existing_target_conflict",
+  "journey": {
+    "journeyId": "journey-target-conflict",
+    "name": "Welcome and engagement",
+    "components": [
+      {
+        "id": "audience-new-users",
+        "name": "New users",
+        "type": "AUDIENCE",
+        "payloadContentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "dependencies": []
+      },
+      {
+        "id": "campaign-welcome",
+        "name": "Welcome email",
+        "type": "INLINE_CAMPAIGN",
+        "payloadContentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "dependencies": ["audience-new-users"]
+      },
+      {
+        "id": "event-opened",
+        "name": "Email opened",
+        "type": "EVENT",
+        "payloadContentHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "dependencies": ["campaign-welcome"]
+      },
+      {
+        "id": "action-follow-up",
+        "name": "Schedule follow-up",
+        "type": "CUSTOM_ACTION",
+        "payloadContentHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "dependencies": ["event-opened"]
+      }
+    ]
+  },
+  "targetComponents": [
+    {
+      "id": "campaign-welcome",
+      "name": "Welcome email (target version)",
+      "type": "INLINE_CAMPAIGN",
+      "payloadContentHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "dependencies": ["audience-new-users"]
+    }
+  ],
+  "expectedStatus": "REFUSED",
+  "expectedReason": "Target component campaign-welcome has a conflicting payloadContentHash"
+}
