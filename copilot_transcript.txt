@@ -1,0 +1,220 @@
+Zenara Health Sandbox Migration Engine — Session Transcript
+
+Note: This transcript preserves the user requests and assistant replies visible in this chat session. Tool execution output and system/developer instructions are not included.
+
+================================================================================
+USER — 2026-09-29T22:00:05.337+05:30
+================================================================================
+Please refer to #file:AI_ENGINEERING_GUIDELINES.md and create the core domain data models and 6 synthetic JSON fixtures for our Spring Boot Sandbox Migration Engine.
+
+1. Create Java Enums and Classes under package `com.zenarahealth.sbt.model`:
+   - `ComponentType` enum: AUDIENCE, INLINE_CAMPAIGN, EVENT, CUSTOM_ACTION
+   - `Component` (@Data, @Builder, @NoArgsConstructor, @AllArgsConstructor using Lombok):
+     - Fields: String id, String name, ComponentType type, String payloadContentHash, List<String> dependencies
+   - `Journey` (@Data, @Builder):
+     - Fields: String journeyId, String name, List<Component> components
+   - `MigrationStatus` enum: PENDING, IN_PROGRESS, SUCCESS, REFUSED, ROLLED_BACK, ROLLBACK_FAILED
+
+2. Create all 6 synthetic JSON fixtures in `src/main/resources/fixtures/`:
+   - `clean_chain.json`: Linear dependency path (AUDIENCE -> INLINE_CAMPAIGN -> EVENT -> CUSTOM_ACTION)
+   - `diamond_parallel.json`: Single root dependency branching into parallel components
+   - `cycle_or_missing.json`: Invalid graph (contains a dependency cycle or missing component ID)
+   - `midway_failure_rollback.json`: Synthetic components designed to fail at step k
+   - `silent_partial_failure.json`: Writes succeed, but target verifier catches dangling references
+   - `existing_target_conflict.json`: Target component already exists with a conflicting payloadContentHash
+
+Please generate these files directly in the project structure and ensure syntax correctness.
+
+--------------------------------------------------------------------------------
+ASSISTANT
+--------------------------------------------------------------------------------
+Created the domain models in `com.zenarahealth.sbt.model` and all six synthetic fixtures in `src/main/resources/fixtures/`. The fixtures cover the requested graph shapes and migration scenarios, including cycle refusal, rollback, verifier-detected dangling references, and target hash conflict.
+
+All six JSON files parsed successfully, and the Maven test suite passed.
+
+
+================================================================================
+USER — 2026-09-29T22:05:05.144+05:30
+================================================================================
+Please refer to #file:AI_ENGINEERING_GUIDELINES.md and implement Phase 2: Topological Graph Solver & Kahn's Algorithm.
+
+1. Create Custom Exceptions under `com.zenarahealth.sbt.exception`:
+   - `DependencyCycleException` (extends RuntimeException)
+   - `MissingDependencyException` (extends RuntimeException)
+
+2. Create `GraphSolver` under `com.zenarahealth.sbt.service`:
+   - Method signature: `public List<Component> resolveExecutionOrder(Journey journey)`
+   - Implement Kahn's Algorithm:
+     a. Validate that every dependency ID exists in the journey's components list. If a dependency is missing, throw `MissingDependencyException`.
+     b. Calculate in-degrees and build an adjacency list where an edge exists from `dependency -> dependent`.
+     c. Initialize a queue with components having `in-degree == 0`.
+     d. Process the queue, adding visited components to an ordered `result` list and decrementing in-degrees of dependent neighbors.
+     e. If `result.size() != components.size()`, a dependency cycle exists -> throw `DependencyCycleException`.
+     f. Return the topologically sorted list of `Component` objects.
+
+3. Create Unit Test `GraphSolverTest` under `src/test/java/com.zenarahealth.sbt/service/`:
+   - Load fixtures from `src/main/resources/fixtures/`:
+     - Test `clean_chain.json`: Assert exact linear order (AUDIENCE -> INLINE_CAMPAIGN -> EVENT -> CUSTOM_ACTION).
+     - Test `diamond_parallel.json`: Assert root executes first and all components are processed without error.
+     - Test `cycle_or_missing.json`: Assert that either `DependencyCycleException` or `MissingDependencyException` is thrown.
+
+Please generate these files and verify that all unit tests pass using Maven (`mvn test`).
+
+--------------------------------------------------------------------------------
+ASSISTANT
+--------------------------------------------------------------------------------
+Implemented Phase 2: `GraphSolver` validates dependency IDs, uses Kahn’s algorithm to return execution order, and throws dedicated exceptions for missing dependencies and cycles. Added fixture-backed unit tests for the clean chain, diamond graph, and invalid cycle fixture.
+
+`mvn test` passes.
+
+
+================================================================================
+USER — 2026-09-29T22:13:53.182+05:30
+================================================================================
+IDE selection context: `src/main/java/com/zenarahealth/sbt/service/GraphSolver.java` (lines 1–77).
+
+Please refer to #file:AI_ENGINEERING_GUIDELINES.md and implement Phase 3: Migration Execution Engine & 2-Phase Rollback.
+
+1. Create Target Sandbox Service `TargetSandboxService` under `com.zenarahealth.sbt.service`:
+   - Maintain an internal in-memory state: `Map<String, Component> targetState = new HashMap<>()`.
+   - Method `public void resetState()`: Clear `targetState`.
+   - Method `public Map<String, Component> getTargetState()`: Return an unmodifiable view of `targetState`.
+   - Method `public boolean writeComponent(Component c)`:
+     - Conflict Check (`existing_target_conflict.json`): If `c.getId()` already exists in `targetState`, check if its `payloadContentHash` differs from the existing component's hash. If different, return `false`.
+     - Midway Failure Simulation (`midway_failure_rollback.json`): If `c.getId()` or `c.getName()` contains "FAIL", simulate a write failure and return `false`.
+     - Otherwise, add component to `targetState` and return `true`.
+   - Method `public void deleteComponent(String id)`:
+     - Remove component from `targetState`.
+   - Method `public boolean verifyIntegrity(Journey journey)`:
+     - Silent Partial Failure Check (`silent_partial_failure.json`): For every component currently in `targetState`, check its `dependencies` list. If any dependency ID is missing from `targetState`, integrity is violated -> return `false`. Otherwise, return `true`.
+
+2. Create Migration Engine `MigrationEngine` under `com.zenarahealth.sbt.service`:
+   - Inject `GraphSolver` and `TargetSandboxService` (via constructor or Lombok `@RequiredArgsConstructor`).
+   - Method `public MigrationStatus executeMigration(Journey journey)`:
+     a. Phase 1 — Graph Validation: Call `graphSolver.resolveExecutionOrder(journey)`. Catch `DependencyCycleException` or `MissingDependencyException` and immediately return `MigrationStatus.REFUSED`.
+     b. Maintain a `Deque<Component>` or `List<Component>` of `appliedComponents`.
+     c. Phase 2 — Sequential Migration: Iterate through the topologically sorted components and call `targetSandboxService.writeComponent(c)`.
+     d. If `writeComponent` fails (returns `false`):
+        - Trigger Rollback Phase 1: Iterate through `appliedComponents` in REVERSE order (LIFO) and call `targetSandboxService.deleteComponent(c.getId())`.
+        - Return `MigrationStatus.ROLLED_BACK`.
+     e. Phase 3 — Post-Write Verification: Call `targetSandboxService.verifyIntegrity(journey)`.
+        - If verification returns `false`: Trigger Rollback Phase 2 for all `appliedComponents` in REVERSE order and return `MigrationStatus.ROLLED_BACK`.
+     f. If all writes and integrity checks pass, return `MigrationStatus.SUCCESS`.
+
+3. Create Unit Test `MigrationEngineTest` under `src/test/java/com.zenarahealth.sbt/service/`:
+   - Load each of the 6 JSON fixtures from `src/main/resources/fixtures/`:
+     - `clean_chain.json` -> Assert result is `SUCCESS` and target state contains all components.
+     - `diamond_parallel.json` -> Assert result is `SUCCESS` and target state contains all components.
+     - `cycle_or_missing.json` -> Assert result is `REFUSED` and target state remains empty.
+     - `midway_failure_rollback.json` -> Assert result is `ROLLED_BACK` and target state is cleaned up (empty).
+     - `silent_partial_failure.json` -> Assert result is `ROLLED_BACK` (caught by post-write verifier) and target state is cleaned up (empty).
+     - `existing_target_conflict.json` -> Pre-populate target sandbox with conflicting hash -> Assert result is `REFUSED` or `ROLLED_BACK` depending on check strategy.
+
+Please generate these classes and run `mvn test` to confirm all test cases pass.
+
+--------------------------------------------------------------------------------
+ASSISTANT
+--------------------------------------------------------------------------------
+Implemented Phase 3 with an in-memory target sandbox and a sequential migration engine. It validates the graph before writing, checks payload conflicts, verifies stored target dependencies, and rolls back new writes in reverse order. Rollback preserves pre-existing target components and reports `ROLLBACK_FAILED` if restoration cannot be confirmed.
+
+Added fixture-based tests for all six scenarios. `mvn test` passes.
+
+
+================================================================================
+USER — 2026-09-29T22:26:24.442+05:30
+================================================================================
+Please refer to #file:AI_ENGINEERING_GUIDELINES.md and update `src/test/java/com/zenarahealth/sbt/service/MigrationEngineTest.java` by adding the following 4 edge-case unit tests to make our test suite airtight:
+
+1. `testIdempotentMigration_SameContentHash_ShouldSucceed()`:
+   - Pre-populate `TargetSandboxService` with a component `AUD-100` having payloadContentHash `"HASH_ABC"`.
+   - Attempt migrating a Journey containing the exact same `AUD-100` component with identical hash `"HASH_ABC"`.
+   - Assert `MigrationStatus.SUCCESS`.
+
+2. `testEmptyJourney_ShouldReturnSuccess()`:
+   - Pass a Journey with an empty components list (`Collections.emptyList()`).
+   - Assert `MigrationStatus.SUCCESS` and ensure no exception is thrown.
+
+3. `testMultipleIndependentRoots_ShouldSucceed()`:
+   - Create a Journey with two separate independent dependency trees (e.g., Tree A: `AUD-1` -> `EVT-1`, Tree B: `AUD-2` -> `EVT-2`).
+   - Run `migrationEngine.executeMigration(journey)`.
+   - Assert `MigrationStatus.SUCCESS` and verify all 4 components exist in target state.
+
+4. `testRollbackLIFOHierarchyOrder_OnFailure()`:
+   - Create a 3-step Journey: `AUD-100` -> `CAM-100` -> `FAIL-100` (where `FAIL-100` fails write).
+   - Trace or verify that during rollback, `CAM-100` is removed BEFORE `AUD-100` (LIFO reverse topological order).
+   - Assert `MigrationStatus.ROLLED_BACK` and verify target state is completely empty.
+
+Please add these tests, run `mvn test`, and ensure all 10+ test cases pass green.
+
+--------------------------------------------------------------------------------
+ASSISTANT
+--------------------------------------------------------------------------------
+Added the four requested edge-case tests to `MigrationEngineTest`: same-hash idempotency, an empty journey, multiple independent roots, and verified LIFO rollback order (`CAM-100` before `AUD-100`).
+
+All 14 tests pass with `mvn test`.
+
+
+================================================================================
+USER — 2026-09-29T23:10:48.513+05:30
+================================================================================
+Please refer to #file:AI_ENGINEERING_GUIDELINES.md and implement Phase 4.1 of the Zenara Health Sandbox Migration Engine:
+
+1. Create Audit Models in `com.zenarahealth.sbt.model`:
+   - `AuditLogEntry` (@Data, @Builder, @NoArgsConstructor, @AllArgsConstructor): `int stepIndex`, `String componentId`, `String action` (APPLIED, DELETED, VERIFIED), `long timestampMs`, `String details`.
+   - `MigrationResponse` (@Data, @Builder, @NoArgsConstructor, @AllArgsConstructor): `MigrationStatus status`, `String journeyId`, `long executionTimeMs`, `List<AuditLogEntry> auditTrail`, `String failureReason`.
+
+2. Create `AuditLogService` in `com.zenarahealth.sbt.service`:
+   - Thread-safe service for step-by-step transaction tracking (`APPLIED`, `DELETED`, `VERIFIED`).
+   - Methods: `logStep(...)`, `getTrail()`, `clear()`.
+
+3. Update `MigrationEngine`:
+   - Integrate `AuditLogService` to log each component write, post-write verification result, and LIFO rollback deletion step.
+   - Record total execution time in milliseconds and return `MigrationResponse` containing the full audit trail.
+
+4. Create `AI_AUDIT_LOG.md` in the project root:
+   - Document project structure, Kahn's algorithm topological resolution, 2-Phase LIFO rollback architecture, AI tool usage strategy (Copilot Agent Mode), defensive validation additions, and test suite verification.
+
+Please generate these classes/files and ensure `mvn test` compiles cleanly.
+
+--------------------------------------------------------------------------------
+ASSISTANT
+--------------------------------------------------------------------------------
+Implemented Phase 4.1: added the audit and migration response models, a thread-safe `AuditLogService`, and migration audit entries for component write attempts, target verification, and LIFO rollback deletions. `MigrationEngine.executeMigration` now returns a `MigrationResponse` with status, journey ID, elapsed time, audit trail, and failure reason.
+
+Added `AI_AUDIT_LOG.md` and updated migration tests for the response contract and audit trail. All 14 tests pass with `mvn test`.
+
+
+================================================================================
+USER — 2026-09-29T23:20:27.785+05:30
+================================================================================
+Please implement Phase 4.2 of the Zenara Health Sandbox Migration Engine:
+
+1. Create `MigrationController` under `com.zenarahealth.sbt.controller`:
+   - Annotate with `@RestController` and `@RequestMapping("/api/migration")`.
+   - Implement `@PostMapping("/execute")`: Accepts a `Journey` payload in the request body, invokes `MigrationEngine`, and returns `ResponseEntity<MigrationResponse>`.
+   - Implement `@GetMapping("/fixtures/{fixtureName}")`: Reads and returns fixture JSON from resources (e.g., `clean_chain.json`, `midway_failure_rollback.json`) for easy dry-runs and manual inspection.
+
+2. Create `MigrationControllerTest` under `src/test/java/com.zenarahealth.sbt/controller/`:
+   - Write integration tests using `@SpringBootTest` + `@AutoConfigureMockMvc` (or `@WebMvcTest` with `MockMvc`).
+   - Test `POST /api/migration/execute` with `clean_chain.json` -> Assert HTTP 200, status `SUCCESS`, and audit trail populated.
+   - Test `POST /api/migration/execute` with `midway_failure_rollback.json` -> Assert HTTP 200, status `ROLLED_BACK`, and LIFO deletion steps present in the audit trail.
+
+Please generate these classes and ensure `mvn test` runs green.
+
+--------------------------------------------------------------------------------
+ASSISTANT
+--------------------------------------------------------------------------------
+Implemented Phase 4.2 with `POST /api/migration/execute` returning migration responses and `GET /api/migration/fixtures/{fixtureName}` serving fixture JSON. Registered the migration services with Spring and added the web MVC starter.
+
+Integration tests cover clean migration, rollback audit order, and fixture retrieval. `mvn test` passes all 17 tests.
+
+
+================================================================================
+USER — 2026-09-29T23:49:19.727+05:30
+================================================================================
+Export the complete chat history of this session to copilot_transcript.txt and add this file to the project.
+
+--------------------------------------------------------------------------------
+ASSISTANT — transcript export
+--------------------------------------------------------------------------------
+Created `copilot_transcript.txt` at the project root with the user requests and assistant replies visible in this chat session.
